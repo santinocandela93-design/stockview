@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StockView — Charts Gratis</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg:#0b0e11; --bg2:#111519; --bg3:#181d22; --border:#1e2530;
+    --text:#d1d5db; --muted:#5a6272; --accent:#2563eb;
+    --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+  }
+  html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:'SF Mono','Fira Code',monospace; font-size:13px; }
+  #app { display:grid; grid-template-columns:240px 1fr; grid-template-rows:44px 1fr; height:100vh; }
+
+  #topbar {
+    grid-column:1/-1; display:flex; align-items:center; gap:8px;
+    padding:0 14px; background:var(--bg2); border-bottom:1px solid var(--border); overflow:hidden;
+  }
+  .logo { font-size:15px; font-weight:700; color:#fff; white-space:nowrap; flex-shrink:0; }
+  .logo span { color:var(--accent); }
+  #sym-display { font-size:15px; font-weight:700; color:#fff; white-space:nowrap; flex-shrink:0; }
+  #px-display  { font-size:14px; font-weight:600; white-space:nowrap; flex-shrink:0; }
+  #ch-display  { font-size:11px; color:var(--muted); white-space:nowrap; flex-shrink:0; }
+  .sep { width:1px; height:20px; background:var(--border); flex-shrink:0; }
+  .spacer { flex:1; }
+  .tf-btn { background:none; border:none; color:var(--muted); cursor:pointer; padding:4px 7px; border-radius:4px; font-family:inherit; font-size:12px; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+  .tf-btn:hover { color:var(--text); background:var(--bg3); }
+  .tf-btn.active { color:#fff; background:var(--accent); }
+  .ind-btn { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; padding:4px 9px; border-radius:4px; font-family:inherit; font-size:11px; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+  .ind-btn.on { color:var(--amber); border-color:var(--amber); }
+
+  #sidebar { background:var(--bg2); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  #sb-header { padding:10px 14px 6px; border-bottom:1px solid var(--border); font-size:10px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; }
+  #search-box { background:var(--bg3); border:1px solid var(--border); color:var(--text); font-family:inherit; font-size:12px; padding:6px 10px; outline:none; border-radius:5px; margin:8px 10px; width:calc(100% - 20px); transition:border-color .2s; }
+  #search-box:focus { border-color:var(--accent); }
+  #watchlist { flex:1; overflow-y:auto; }
+  .si { display:flex; align-items:center; justify-content:space-between; padding:9px 14px; cursor:pointer; border-bottom:1px solid var(--border); transition:background .1s; border-left:2px solid transparent; }
+  .si:hover { background:var(--bg3); }
+  .si.active { background:rgba(37,99,235,.12); border-left-color:var(--accent); }
+  .si-sym { font-weight:700; color:#fff; font-size:13px; }
+  .si-name { font-size:10px; color:var(--muted); margin-top:1px; }
+  .si-px { font-size:13px; font-weight:600; text-align:right; }
+  .si-ch { font-size:10px; text-align:right; margin-top:1px; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+
+  #info-panel { border-top:1px solid var(--border); padding:12px 14px; font-size:11px; }
+  .ir { display:flex; justify-content:space-between; padding:3px 0; }
+  .il { color:var(--muted); } .iv { color:var(--text); font-weight:600; }
+
+  #chart-wrap { position:relative; background:var(--bg); overflow:hidden; }
+  #chart { width:100%; height:100%; }
+  #legend { position:absolute; top:10px; left:12px; display:flex; gap:14px; font-size:11px; pointer-events:none; z-index:10; }
+  .ld { width:14px; height:2px; border-radius:2px; }
+
+  #loader { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:var(--bg); z-index:5; }
+  .spinner { width:28px; height:28px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  #loader-msg { color:var(--muted); font-size:12px; text-align:center; max-width:280px; line-height:1.7; }
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo">STOCK<span>VIEW</span></div>
+    <div class="sep"></div>
+    <div id="sym-display">AAPL</div>
+    <div id="px-display" style="color:var(--green)">—</div>
+    <div id="ch-display">—</div>
+    <div class="sep"></div>
+    <button class="tf-btn" data-range="5d"  data-interval="5m">5m</button>
+    <button class="tf-btn" data-range="1mo" data-interval="15m">15m</button>
+    <button class="tf-btn" data-range="3mo" data-interval="1h">1h</button>
+    <button class="tf-btn active" data-range="1y" data-interval="1d">1D</button>
+    <button class="tf-btn" data-range="5y"  data-interval="1wk">1W</button>
+    <div class="sep"></div>
+    <button class="ind-btn on" id="toggle-ema">EMA 20/50</button>
+    <button class="ind-btn on" id="toggle-vol">Volumen</button>
+    <div class="spacer"></div>
+    <span style="font-size:10px;color:var(--muted);flex-shrink:0;">● Yahoo Finance · sin registro</span>
+  </div>
+
+  <div id="sidebar">
+    <div id="sb-header">Watchlist</div>
+    <input id="search-box" type="text" placeholder="Buscar o agregar (ej: TSLA)..." />
+    <div id="watchlist"></div>
+    <div id="info-panel">
+      <div class="ir"><span class="il">Apertura</span><span class="iv" id="i-open">—</span></div>
+      <div class="ir"><span class="il">Máximo</span> <span class="iv" id="i-high">—</span></div>
+      <div class="ir"><span class="il">Mínimo</span> <span class="iv" id="i-low">—</span></div>
+      <div class="ir"><span class="il">Cierre</span> <span class="iv" id="i-close">—</span></div>
+      <div class="ir"><span class="il">Volumen</span><span class="iv" id="i-vol">—</span></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted);line-height:1.6;">Sin registro · sin API key<br>Datos: Yahoo Finance</div>
+    </div>
+  </div>
+
+  <div id="chart-wrap">
+    <div id="legend">
+      <div style="display:flex;align-items:center;gap:5px"><div class="ld" style="background:#2563eb"></div><span style="color:#2563eb">EMA 20</span></div>
+      <div style="display:flex;align-items:center;gap:5px"><div class="ld" style="background:#f59e0b"></div><span style="color:#f59e0b">EMA 50</span></div>
+    </div>
+    <div id="loader"><div class="spinner"></div><p id="loader-msg">Cargando AAPL…</p></div>
+    <div id="chart"></div>
+  </div>
+</div>
+
+<script>
+const S = { symbol:'AAPL', range:'1y', interval:'1d', showEma:true, showVol:true };
+const WL = [
+  {sym:'AAPL',name:'Apple'},{sym:'MSFT',name:'Microsoft'},{sym:'GOOGL',name:'Alphabet'},
+  {sym:'AMZN',name:'Amazon'},{sym:'NVDA',name:'NVIDIA'},{sym:'TSLA',name:'Tesla'},
+  {sym:'META',name:'Meta'},{sym:'JPM',name:'JPMorgan'},{sym:'V',name:'Visa'},
+  {sym:'UNH',name:'UnitedHealth'},{sym:'XOM',name:'ExxonMobil'},{sym:'WMT',name:'Walmart'},
+];
+const prices = {};
+
+const wrap = document.getElementById('chart-wrap');
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+  layout:{background:{color:'#0b0e11'},textColor:'#5a6272'},
+  grid:{vertLines:{color:'#111519'},horzLines:{color:'#111519'}},
+  crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+  rightPriceScale:{borderColor:'#1e2530'},
+  timeScale:{borderColor:'#1e2530',timeVisible:true,secondsVisible:false},
+  width:wrap.clientWidth, height:wrap.clientHeight,
+});
+let cS=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
+let ema20=null,ema50=null,volS=null;
+
+function buildIndicators() {
+  if(ema20){chart.removeSeries(ema20);ema20=null;}
+  if(ema50){chart.removeSeries(ema50);ema50=null;}
+  if(volS){chart.removeSeries(volS);volS=null;}
+  if(S.showEma){
+    ema20=chart.addLineSeries({color:'#2563eb',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    ema50=chart.addLineSeries({color:'#f59e0b',lineWidth:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+  }
+  if(S.showVol){
+    volS=chart.addHistogramSeries({priceScaleId:'vol',scaleMargins:{top:.8,bottom:0}});
+    chart.priceScale('vol').applyOptions({scaleMargins:{top:.8,bottom:0}});
+  }
+}
+
+function ema(data,p){const k=2/(p+1);let e=null;return data.map(d=>{e=e===null?d.close:d.close*k+e*(1-k);return{time:d.time,value:+e.toFixed(4)};});}
+
+// Proxy server-side que evita el problema de CORS
+async function fetchBars(symbol,range,interval){
+  const url=`/api/bars?symbol=${encodeURIComponent(symbol)}&range=${range}&interval=${interval}`;
+  const res=await fetch(url);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  return data.bars;
+}
+
+function showLoader(msg){document.getElementById('loader').style.display='flex';document.getElementById('loader-msg').textContent=msg;}
+function hideLoader(){document.getElementById('loader').style.display='none';}
+function fmtVol(v){if(!v)return'—';if(v>=1e9)return(v/1e9).toFixed(2)+'B';if(v>=1e6)return(v/1e6).toFixed(2)+'M';if(v>=1e3)return(v/1e3).toFixed(1)+'K';return String(v);}
+function updateInfo(b){
+  document.getElementById('i-open').textContent=b.open?`$${b.open.toFixed(2)}`:'—';
+  document.getElementById('i-high').textContent=b.high?`$${b.high.toFixed(2)}`:'—';
+  document.getElementById('i-low').textContent=b.low?`$${b.low.toFixed(2)}`:'—';
+  document.getElementById('i-close').textContent=b.close?`$${b.close.toFixed(2)}`:'—';
+  document.getElementById('i-vol').textContent=fmtVol(b.volume);
+}
+
+async function loadChart(){
+  showLoader(`Cargando ${S.symbol}…`);
+  document.getElementById('sym-display').textContent=S.symbol;
+  try{
+    const bars=await fetchBars(S.symbol,S.range,S.interval);
+    if(!bars||!bars.length) throw new Error('Sin datos para este símbolo');
+    buildIndicators();
+    cS.setData(bars);
+    if(S.showEma){ema20.setData(ema(bars,20));ema50.setData(ema(bars,50));}
+    if(S.showVol){volS.setData(bars.map(b=>({time:b.time,value:b.volume,color:b.close>=b.open?'rgba(34,197,94,.3)':'rgba(239,68,68,.3)'})));}
+    chart.timeScale().fitContent();
+    hideLoader();
+    const last=bars[bars.length-1],prev=bars[bars.length-2];
+    const ch=last.close-(prev?.close??last.open);
+    const pct=(ch/(prev?.close??last.open))*100;
+    const sign=ch>=0?'+':'';
+    document.getElementById('px-display').textContent=`$${last.close.toFixed(2)}`;
+    document.getElementById('px-display').style.color=ch>=0?'var(--green)':'var(--red)';
+    document.getElementById('ch-display').textContent=`${sign}${ch.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+    updateInfo(last);
+    prices[S.symbol]={c:last.close,ch:pct};
+    renderWatchlist(document.getElementById('search-box').value);
+    refreshSidebarPrices();
+  }catch(err){showLoader(`Error: ${err.message}`);}
+}
+
+async function refreshSidebarPrices(){
+  for(const s of WL){
+    if(prices[s.sym]) continue;
+    try{
+      const bars=await fetchBars(s.sym,'5d','1d');
+      if(bars&&bars.length>=2){const c=bars[bars.length-1].close,p=bars[bars.length-2].close;prices[s.sym]={c,ch:((c-p)/p)*100};}
+    }catch{}
+    renderWatchlist(document.getElementById('search-box').value);
+    await new Promise(r=>setTimeout(r,400));
+  }
+}
+
+function renderWatchlist(filter=''){
+  const wl=document.getElementById('watchlist');wl.innerHTML='';
+  WL.filter(s=>s.sym.toLowerCase().includes(filter.toLowerCase())||s.name.toLowerCase().includes(filter.toLowerCase()))
+    .forEach(s=>{
+      const px=prices[s.sym];const div=document.createElement('div');
+      div.className='si'+(s.sym===S.symbol?' active':'');
+      const cls=px?(px.ch>=0?'pos':'neg'):'';const sign=px&&px.ch>=0?'+':'';
+      div.innerHTML=`<div><div class="si-sym">${s.sym}</div><div class="si-name">${s.name}</div></div><div><div class="si-px ${cls}">${px?'$'+px.c.toFixed(2):'—'}</div><div class="si-ch ${cls}">${px?sign+px.ch.toFixed(2)+'%':'—'}</div></div>`;
+      div.onclick=()=>{S.symbol=s.sym;renderWatchlist(document.getElementById('search-box').value);loadChart();};
+      wl.appendChild(div);
+    });
+}
+
+document.getElementById('search-box').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const v=e.target.value.trim().toUpperCase();if(v&&!WL.find(s=>s.sym===v))WL.unshift({sym:v,name:v});if(v){S.symbol=v;loadChart();}renderWatchlist(v);}
+});
+document.getElementById('search-box').addEventListener('input',e=>renderWatchlist(e.target.value));
+document.querySelectorAll('.tf-btn').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');S.range=btn.dataset.range;S.interval=btn.dataset.interval;loadChart();
+}));
+document.getElementById('toggle-ema').addEventListener('click',function(){S.showEma=!S.showEma;this.classList.toggle('on',S.showEma);loadChart();});
+document.getElementById('toggle-vol').addEventListener('click',function(){S.showVol=!S.showVol;this.classList.toggle('on',S.showVol);loadChart();});
+chart.subscribeCrosshairMove(param=>{
+  if(!param.time||!param.seriesData.size)return;
+  const d=param.seriesData.get(cS);if(!d)return;
+  updateInfo(d);document.getElementById('px-display').textContent=`$${d.close.toFixed(2)}`;
+});
+window.addEventListener('resize',()=>chart.applyOptions({width:wrap.clientWidth,height:wrap.clientHeight}));
+renderWatchlist();
+loadChart();
+setInterval(()=>loadChart(),60000);
+</script>
+</body>
+</html>
